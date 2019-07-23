@@ -1,0 +1,72 @@
+version: 2.1
+
+orbs:
+  codacy: codacy/base@1.0.0
+
+jobs:
+  build:
+    machine: true
+    working_directory: ~/workdir
+    steps:
+      - attach_workspace:
+          at: ~/
+      - run:
+          name: Build 'runtime' target
+          command: ./build.sh runtime
+      - run:
+          name: Build 'build' target
+          command: ./build.sh build
+      - run:
+          name: Save docker to file
+          command: |
+            docker save --output ~/workdir/docker-image.tar \
+              "codacy/${CIRCLE_PROJECT_REPONAME}-runtime:$(cat .version)" \
+              "codacy/${CIRCLE_PROJECT_REPONAME}-build:$(cat .version)"
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - workdir
+
+  publish:
+    machine: true
+    working_directory: ~/workdir
+    steps:
+      - attach_workspace:
+          at: ~/
+      - run:
+          name: Load docker from file
+          command: docker load --input ~/workdir/docker-image.tar
+      - run:
+          name: Publish to Docker Hub
+          command: |
+            docker login -u "$DOCKER_USER" -p "$DOCKER_PASS"
+
+            docker tag "codacy/${CIRCLE_PROJECT_REPONAME}-runtime:$(cat .version)" "codacy/${CIRCLE_PROJECT_REPONAME}-runtime:latest"
+            docker push "codacy/${CIRCLE_PROJECT_REPONAME}-runtime"
+
+            docker tag "codacy/${CIRCLE_PROJECT_REPONAME}-build:$(cat .version)" "codacy/${CIRCLE_PROJECT_REPONAME}-build:latest"
+            docker push "codacy/${CIRCLE_PROJECT_REPONAME}-build"
+
+
+workflows:
+  version: 2
+  test-and-publish:
+    jobs:
+      - codacy/checkout_and_version:
+          write_sbt_version: false
+      - build:
+          context: CodacyDocker
+          requires:
+            - codacy/checkout_and_version
+
+      - publish:
+          filters:
+            branches:
+              only:
+                - master
+          requires:
+            - build
+
+      - codacy/tag_version:
+          requires:
+            - publish
