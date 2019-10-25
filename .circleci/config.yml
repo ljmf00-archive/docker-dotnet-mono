@@ -55,11 +55,11 @@ workflows:
       - codacy/checkout_and_version:
           write_sbt_version: false
       - build:
-          context: CodacyDocker
           requires:
             - codacy/checkout_and_version
 
       - publish:
+          context: CodacyDocker
           filters:
             branches:
               only:
